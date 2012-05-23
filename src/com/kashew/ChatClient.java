@@ -1,7 +1,11 @@
 package com.kashew;
 
+import java.awt.AWTException;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.Image;
+import java.awt.SystemTray;
+import java.awt.TrayIcon;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowEvent;
@@ -9,15 +13,13 @@ import java.awt.event.WindowListener;
 import java.io.File;
 import java.io.IOException;
 
-import javax.print.attribute.standard.Media;
-import javax.sound.sampled.AudioFormat;
+import javax.imageio.ImageIO;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
-import javax.sound.sampled.DataLine;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.UnsupportedAudioFileException;
-import javax.sound.sampled.spi.AudioFileReader;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -25,13 +27,14 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.JTextPane;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
 
 public class ChatClient extends JFrame {
 	private static final long serialVersionUID = 153585732743185407L;
-	public static final String VERSION="V0.5.0";
+	public static final String VERSION="V0.4.7";
 	private static String lineSep;
 	private static NetWorker netWorker;
 	private static String userName;
@@ -40,11 +43,86 @@ public class ChatClient extends JFrame {
 	private Dimension windowSize = new Dimension(320, 240);
 	static JTabbedPane mainPane = new JTabbedPane();
 	static JPanel mainPanel = new JPanel(new BorderLayout());
-	static JTextPane chatPane = new JTextPane();
+	static JTextArea chatPane = new JTextArea();
 	static ChatClient window;
 	Boolean hide = false;
-	static Clip notif;
-	static Clip secretSong;
+	static File notif = new File(System.getProperty("user.dir")+"/lib/notif.WAV");
+	static File iconFile = new File(System.getProperty("user.dir")+"/lib/chatty.png");
+	static File trayIconFile = new File(System.getProperty("user.dir")+"/lib/tray.png");
+	static TrayIcon trayIcon = new TrayIcon(new ImageIcon(trayIconFile.toString(), "Tray icon").getImage());
+	SystemTray tray = SystemTray.getSystemTray();
+	static Clip clip;
+	static AudioInputStream ais;
+	public ChatClient() {
+		Image icon = null;
+		try {
+			icon = ImageIO.read(iconFile);
+		} catch (IOException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+		chatPane.setEditable(false);
+		chatPane.setText("Welcome to Chatty! Say hi!");
+		chatPane.setLineWrap(true);
+		setTitle("Chatty");
+		setIconImage(icon);
+		setSize(windowSize);
+		setLocationRelativeTo(null);
+		setDefaultCloseOperation(EXIT_ON_CLOSE);
+		final JTextField chatField = new JTextField();
+		chatField.setColumns(20);
+		JButton sendButton = new JButton("Send");
+		sendButton.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				String input = chatField.getText();
+				if(input.length() > 0) {
+					checkCommands(input);
+					chatField.setText("");
+				}
+			}
+		});
+		chatField.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				String input = chatField.getText();
+				if(input.length() > 0) {
+					checkCommands(input);
+					chatField.setText("");
+				}
+			}
+		});
+		try {
+			tray.add(trayIcon);
+		} catch (AWTException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+		JPanel typePanel = new JPanel();
+		add(mainPane);
+		JScrollPane scrollPane = new JScrollPane(chatPane);
+		scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		scrollPane.setPreferredSize(windowSize);
+		mainPanel.add(typePanel, BorderLayout.SOUTH);
+		mainPanel.add(scrollPane, BorderLayout.CENTER);
+		typePanel.add(chatField);
+		typePanel.add(sendButton);
+		init();
+	}
+	public static void showDisconnect() {
+		try {
+			clip = AudioSystem.getClip();
+			ais = AudioSystem.getAudioInputStream(ChatClient.class.getResourceAsStream(notif.toString()));
+			clip.open(ais);
+			clip.start();
+		} catch (UnsupportedAudioFileException | LineUnavailableException | IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		JOptionPane.showMessageDialog(null, "Chat closed.", "Notice", JOptionPane.ERROR_MESSAGE);
+		if(!window.hasFocus()) {
+			trayIcon.displayMessage(null, "Chat closed.", TrayIcon.MessageType.ERROR);
+		}
+		showOption();
+	}
 	public static void main(String[] args) {
     	SwingUtilities.invokeLater(new Runnable() {
     		public void run() {
@@ -53,21 +131,21 @@ public class ChatClient extends JFrame {
     			window.addWindowListener(new WindowListener() {
     				@Override
     	            public void windowClosing(WindowEvent arg0) {
- /*  					if(Client.getSocket() != null) {
+  					if(Client.s != null) {
     						try {
-								Client.getSocket().close();
+								Client.s.close();
 							} catch (IOException e) {
 								// TODO Auto-generated catch block
 								e.printStackTrace();
 							}
-    					} else if(Server.getSocket() != null & Server.getServerSocket() != null) {
+    					} else if(Server.s != null & Server.ss != null) {
     						try {
-    							Server.getSocket().close();
-    							Server.getServerSocket().close();
+    							Server.s.close();
+    							Server.ss.close();
     						} catch(IOException e) {
     							
     						}
-    					} */
+    					}
     	            }
 					@Override
 					public void windowActivated(WindowEvent e) {
@@ -112,7 +190,6 @@ public class ChatClient extends JFrame {
 				showOption();
 			}
 		} else if(result == JOptionPane.NO_OPTION) {
-			System.out.println(usrField.getText()+", "+ipField.getText());
 			if(usrField.getText().length() > 0 & ipField.getText().length() > 0) {
 				userName = usrField.getText();
 				String ip = ipField.getText();
@@ -126,85 +203,35 @@ public class ChatClient extends JFrame {
 			System.exit(0);
 		}
 	}
-	public ChatClient() {
-		chatPane.setEditable(false);
-		chatPane.setText("Welcome to Chatty! Say hi!");
-		setTitle("Chatty");
-		setSize(windowSize);
-		try {
-			notif = loadAudioFile(System.getProperty("user.dir")+"/lib/notif.wav");
-			secretSong = loadAudioFile(System.getProperty("user.dir")+"/lib/clndnce.wav");
-		} catch (UnsupportedAudioFileException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		} catch (IOException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		} catch (LineUnavailableException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		}
-		setLocationRelativeTo(null);
-		setDefaultCloseOperation(HIDE_ON_CLOSE);
-		final JTextField chatField = new JTextField();
-		chatField.setColumns(20);
-		JButton sendButton = new JButton("Send");
-		sendButton.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				String input = chatField.getText();
-				if(input.length() > 0) {
-					checkCommands(input);
-					chatField.setText("");
-				}
-			}
-		});
-		chatField.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				String input = chatField.getText();
-				if(input.length() > 0) {
-					checkCommands(input);
-					chatField.setText("");
-				}
-			}
-		});
-		JPanel typePanel = new JPanel();
-		add(mainPane);
-		JScrollPane scrollPane = new JScrollPane(chatPane);
-		mainPanel.add(typePanel, BorderLayout.SOUTH);
-		mainPanel.add(scrollPane, BorderLayout.CENTER);
-		typePanel.add(chatField);
-		typePanel.add(sendButton);
-		init();
-	}
 	public void init() {
 		lineSep=System.getProperty("line.separator");
-	}
-	public Clip loadAudioFile(String filename) throws UnsupportedAudioFileException, IOException, LineUnavailableException{
-		File file = new File(filename);
-		System.out.println(filename.toString());
-		AudioInputStream stream = AudioSystem.getAudioInputStream(file);
-		AudioFormat format = stream.getFormat();
-		DataLine.Info info = new DataLine.Info(Clip.class, format);
-		Clip clip = (Clip) AudioSystem.getLine(info);
-		clip.open(stream);
-		return clip;
 	}
 	public static void update() {
 		Packet p = netWorker.get();
 		if(p != null){
 			if(p.getID()!=-1&&p.getID()!=lastID){
-				if(!window.isFocused()){
-					notif.setFramePosition(0);
-					notif.start();
-					window.toFront();
+				if(p.getMessage().length() > 0) {
+					if(p.getMessage().toLowerCase().contains("/me")){
+						chatPane.append(lineSep+p.getMessage().replace("/me", p.getUser()));
+					} else {
+						chatPane.append(lineSep+p.getUser()+": "+p.getMessage());
+					}
+				} else {
+					chatPane.append(lineSep+"Your partner has changed their name to "+p.getUser());
 				}
-				if(p.getMessage().startsWith("/n")){
-					secretSong.setFramePosition(0);
-					secretSong.start();
-					chatPane.setText(chatPane.getText()+lineSep+p.getUser()+" has started the clown dance!");
-				}else{
-					chatPane.setText(chatPane.getText()+lineSep+p.getUser()+": "+p.getMessage());
+				if(!window.hasFocus()) {
+					try {
+						clip = AudioSystem.getClip();
+						ais = AudioSystem.getAudioInputStream(ChatClient.class.getResourceAsStream(notif.toString()));
+						clip.open(ais);
+						clip.start();
+					} catch (UnsupportedAudioFileException | LineUnavailableException | IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					trayIcon.displayMessage(null, p.getMessage(), TrayIcon.MessageType.NONE);
 				}
+				chatPane.selectAll();
 				mainPane.setTitleAt(0, p.getUser());
 				lastID=p.getID();
 			}
@@ -214,7 +241,6 @@ public class ChatClient extends JFrame {
 		if(host == true){
 			netWorker = new Server();
 			netWorker.start();
-			System.out.println("Congrats! You are now hosting!");
 			window.setTitle("Chatty - Waiting for client");
 			netWorker.send(new Packet(userName,"Connected.",idinc));
 			idinc++;
@@ -228,15 +254,31 @@ public class ChatClient extends JFrame {
 	}
 	public void checkCommands(String input){
 		if(input.toLowerCase().contains("/name")){
-			String nUserName=input.replaceFirst("/name ", "");
-			netWorker.send(new Packet(userName, "has changed their name to"+nUserName, idinc));
-			userName = nUserName;
-			chatPane.setText(chatPane.getText()+lineSep+"Your name is now "+userName);
+			userName=input.replaceFirst("/name ", "");
+			netWorker.send(new Packet(userName, "", idinc));
+			chatPane.append(lineSep+"Your name is now "+userName+".");
 			idinc++;
+		}else if(input.toLowerCase().contains("/disconnect")) {
+			if(Client.s != null) {
+				try {
+					Client.s.close();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			} else if(Server.s != null & Server.ss != null) {
+				try {
+					Server.s.close();
+					Server.ss.close();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
 		}else if(input.toLowerCase().contains("/help")){
-			chatPane.setText(chatPane.getText()+lineSep+"Commands:"+lineSep+"/help returns these commands, duh."+lineSep+"/name changes your name."+lineSep+"/me speaks in third person"+lineSep+"/exit exits the application.");
+			chatPane.append(lineSep+"Commands:"+lineSep+"/help returns these commands, duh."+lineSep+"/name changes your name."+lineSep+"/me speaks in third person"+lineSep+"/exit exits the application."+lineSep+"/disconnect closes the chat, but leaves the application open.");
 		}else if(input.toLowerCase().contains("/exit")){
-			chatPane.setText(chatPane.getText()+lineSep+"Bye!");
+			chatPane.append(lineSep+"Bye!");
 			try {
 				Thread.sleep(10);
 			} catch (InterruptedException e) {
@@ -245,21 +287,14 @@ public class ChatClient extends JFrame {
 			}
 			System.exit(0);
 		}else if(input.toLowerCase().contains("/me")){
+			netWorker.send(new Packet(userName,input,idinc));
 			String message = input.replace("/me", userName);
-			chatPane.setText(chatPane.getText()+lineSep+message);
-			netWorker.send(new Packet(userName,message,idinc));
+			chatPane.append(lineSep+message);
 			idinc++;
-		}else if(input.toLowerCase().startsWith("/n")){
-			secretSong.setFramePosition(0);
-			secretSong.start();
-			chatPane.setText(chatPane.getText()+lineSep+userName+" has started the clown dance!");
-			netWorker.send(new Packet(userName,"/n",idinc));
 		}else{
 			netWorker.send(new Packet(userName, input,idinc));
-			chatPane.setText(chatPane.getText()+lineSep+userName+":"+input);
+			chatPane.append(lineSep+userName+": "+input);
 			idinc++;
 		}
-		
-		
 	}
 }
